@@ -1,0 +1,18 @@
+# Optional overlay for Linux docker hosts — gives the container real L2
+# visibility onto your physical LAN so /api/probe can resolve actual device
+# MACs via ARP, instead of just the docker bridge's isolated subnet.
+#
+# Linux only. Not supported the same way on macOS/Windows Docker Desktop
+# (no true host network namespace) — on those, run without this overlay;
+# reach-test/ping still works, MAC auto-fill just won't.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.host-net.yml up -d --build
+#
+# With network_mode: host, the container binds directly to the host's
+# network stack — the `ports:` mapping in the base file is ignored (harmless
+# warning from compose), the app is reachable at http://<host-ip>:8080
+# straight away since NETINV_PORT no longer applies.
+services:
+  netinv:
+    network_mode: host
