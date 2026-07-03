@@ -94,20 +94,25 @@ Frontend behavior: on load it tries `GET /api/state`; if the server's unreachabl
 ```
 server/
   Dockerfile
+  .dockerignore
   pyproject.toml
   app/
-    main.py        # FastAPI routes + static file mount
-    db.py           # SQLite schema, state blob + devices table
+    __init__.py
+    main.py          # FastAPI routes: /api/state, /api/stream (SSE), /api/probe, exports
+    db.py            # SQLite schema, state blob + devices table
   static/
-    index.html      # frontend copy, wired to /api/state instead of localStorage
-docker-compose.yml   # repo root — build + run + volume + healthcheck
+    index.html       # frontend copy, wired to /api/state + SSE instead of localStorage
+docker-compose.yml            # repo root — build + run + volume + healthcheck
+docker-compose.host-net.yml   # optional overlay, Linux only — real ARP for MAC probe
 .env.example
+.gitignore
 ```
 
 ## Repo
 
 ```
-index.html   # entire app — markup, styles, logic, single file
+index.html   # standalone build — entire app, markup/styles/logic, single file
+server/      # dockerized build — FastAPI + SQLite backend, same UI, shared/live inventory
 ```
 
-No build step. Edit in place, commit, done.
+No build step for the standalone file — edit in place, commit, done. The server build needs `docker compose up -d --build` after editing anything under `server/`.
