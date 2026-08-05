@@ -745,7 +745,10 @@ td.td-check{text-align:center;padding:0 4px}
     <div class="scan-controls">
       <div class="sc-field">
         <label>Subnet / Range</label>
-        <input id="scanSubnet" placeholder="192.168.1.0/24" value="">
+        <div style="display:flex;gap:6px">
+          <input id="scanSubnet" placeholder="192.168.1.0/24" value="">
+          <button class="btn bo" style="padding:4px 8px;font-size:10px" title="Copy equivalent nmap command for a full host discovery scan" onclick="copyNmapCmd(this)">⧉ nmap</button>
+        </div>
       </div>
       <div class="sc-field">
         <label>Timeout (ms)</label>
@@ -1973,24 +1976,34 @@ async function pingSelected(){
 }
 
 // ─── COPY TO CLIPBOARD ───────────────────────────────────────────────────────
+function copyNmapCmd(btn){
+  const subnet=document.getElementById("scanSubnet").value.trim()||"192.168.1.0/24";
+  copyText(`sudo nmap -sn ${subnet} -oX scan.xml`, btn);
+}
 function copyText(text, btn){
   if(!text||text==="") return;
   // Decode html entities that may have been passed
   const decoded = text.replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-  navigator.clipboard.writeText(decoded).then(()=>{
-    const orig=btn.textContent;
+  const orig=btn.textContent;
+  const flash=()=>{
     btn.textContent="✓"; btn.classList.add("copied");
     setTimeout(()=>{btn.textContent=orig;btn.classList.remove("copied");},1200);
-  }).catch(()=>{
-    // Fallback for file:// protocol
+  };
+  const legacyFallback=()=>{
+    // navigator.clipboard is unavailable on insecure origins (plain http:// on
+    // a LAN IP, not localhost) or file:// — execCommand still works there.
     const ta=document.createElement("textarea");
     ta.value=decoded; ta.style.position="fixed"; ta.style.opacity="0";
     document.body.appendChild(ta); ta.select();
     document.execCommand("copy");
     document.body.removeChild(ta);
-    btn.textContent="✓"; btn.classList.add("copied");
-    setTimeout(()=>{btn.textContent="⧉";btn.classList.remove("copied");},1200);
-  });
+    flash();
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(decoded).then(flash).catch(legacyFallback);
+  }else{
+    legacyFallback();
+  }
 }
 
 // ─── CTRL+S ──────────────────────────────────────────────────────────────────
@@ -2378,21 +2391,28 @@ function parseNmapText(txt){
     // Latency line
     const mLat=line.match(/Host is up \(([\d.]+)s latency\)/);
     if(mLat) cur.notes=`RTT: ${Math.round(parseFloat(mLat[1])*1000)}ms`;
-    // Port lines: "80/tcp open http"
-    const mPort=line.match(/^(\d+)\/(tcp|udp)\s+(open|filtered)\s+(\S+)/);
+    // Port lines: "80/tcp open http" or, with -sV, "80/tcp open http Crestron web server 2.0"
+    const mPort=line.match(/^(\d+)\/(tcp|udp)\s+(open|filtered)\s+(\S+)(?:\s+(.+))?$/);
     if(mPort){
-      const svc=mPort[4];
+      const svc=mPort[4],versionStr=mPort[5];
       cur.notes=(cur.notes?cur.notes+", ":"")+`${mPort[1]}/${mPort[2]}(${svc})`;
+      if(versionStr&&!cur.model)cur.model=versionStr.trim();
+      continue;
     }
     // MAC line
     const mMac=line.match(/MAC Address: ([0-9A-F:]{17})(?:\s+\((.+)\))?/i);
-    if(mMac){cur.mac=mMac[1];if(mMac[2]&&!cur.brand)cur.brand=mMac[2];}
+    if(mMac){cur.mac=mMac[1];if(mMac[2]&&!cur.brand)cur.brand=mMac[2];continue;}
+    // -O device fingerprint, used only when no -sV service banner gave us a model
+    const mDevice=line.match(/^Device type:\s*(.+)$/);
+    if(mDevice&&!cur.model){cur.model=mDevice[1].trim();continue;}
+    const mRunning=line.match(/^Running:\s*(.+)$/);
+    if(mRunning&&!cur.model){cur.model=mRunning[1].trim();continue;}
   }
   if(cur)devs.push(cur);
   return devs.filter(d=>d.ip);
 }
 
-// Grepable: "Host: 1.2.3.4 (hostname)	Status: Up"
+// Grepable: "Host: 1.2.3.4 (hostname)	Status: Up ... Ports: 80/open/tcp//http//Crestron web server 2.0/ ... MAC: .. (Vendor)"
 function parseNmapGrepable(txt){
   const devs=[];
   for(const line of txt.split(/\r?\n/)){
@@ -2402,7 +2422,18 @@ function parseNmapGrepable(txt){
     const ip=mIP[1],hostname=mIP[2]||"";
     const mPorts=line.match(/Ports:\s+([^\t]+)/);
     const notes=mPorts?mPorts[1].trim():"";
-    devs.push({hostname,ip,mac:"",brand:"",model:"",vlan:"",subnet:"",
+    // Each port entry is port/state/proto/owner/service/rpc_info/version/ — version
+    // (7th field) is where -sV puts the product+version banner, e.g. model text.
+    let model="";
+    if(mPorts){
+      for(const entry of mPorts[1].split(/,\s*/)){
+        const version=(entry.split("/")[6]||"").trim();
+        if(version){model=version;break;}
+      }
+    }
+    const mMac=line.match(/MAC:\s+([0-9A-F:]{17})(?:\s+\(([^)]*)\))?/i);
+    const mac=mMac?mMac[1]:"",brand=mMac&&mMac[2]?mMac[2]:"";
+    devs.push({hostname,ip,mac,brand,model,vlan:"",subnet:"",
                location:"",serial:"",username:"",password:"",status:"Online",notes});
   }
   return devs;
@@ -2419,12 +2450,39 @@ function parseNmapXML(txt){
       const mac=h.querySelector("address[addrtype='mac']")?.getAttribute("addr")||"";
       const vendor=h.querySelector("address[addrtype='mac']")?.getAttribute("vendor")||"";
       const hostname=h.querySelector("hostname")?.getAttribute("name")||"";
-      const ports=[...h.querySelectorAll("port")].filter(p=>
+      const openPorts=[...h.querySelectorAll("port")].filter(p=>
         p.querySelector("state")?.getAttribute("state")==="open"
-      ).map(p=>`${p.getAttribute("portid")}/${p.getAttribute("protocol")}(${p.querySelector("service")?.getAttribute("name")||"?"})`);
-      devs.push({hostname,ip,mac,brand:vendor,model:"",vlan:"",subnet:"",
-                 location:"",serial:"",username:"",password:"",status:"Online",
-                 notes:ports.join(", ")});
+      );
+      const notes=openPorts.map(p=>`${p.getAttribute("portid")}/${p.getAttribute("protocol")}(${p.querySelector("service")?.getAttribute("name")||"?"})`).join(", ");
+
+      // Model guess, best source first:
+      // 1. -sV service banner (product [+version]) — usually the most literal brand/model string
+      let model="";
+      for(const p of openPorts){
+        const svc=p.querySelector("service");
+        const product=svc?.getAttribute("product");
+        if(product){
+          const version=svc.getAttribute("version");
+          model=version?`${product} ${version}`:product;
+          break;
+        }
+      }
+      // 2. -O OS-class fingerprint (vendor + device type, e.g. "Crestron webcam")
+      if(!model){
+        const osclass=h.querySelector("os osclass[vendor]");
+        const v=osclass?.getAttribute("vendor");
+        if(v&&v.toLowerCase()!=="generic"){
+          model=[v,osclass.getAttribute("type")].filter(Boolean).join(" ");
+        }
+      }
+      // 3. NSE banner scripts as a last resort (http-title / snmp-sysdescr)
+      if(!model){
+        const script=h.querySelector("script[id='http-title'],script[id='snmp-sysdescr']");
+        if(script)model=(script.getAttribute("output")||"").split("\n")[0].trim().slice(0,80);
+      }
+
+      devs.push({hostname,ip,mac,brand:vendor,model,vlan:"",subnet:"",
+                 location:"",serial:"",username:"",password:"",status:"Online",notes});
     });
   }catch(e){alert("XML parse error: "+e.message);}
   return devs;
