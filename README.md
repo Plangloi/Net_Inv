@@ -19,15 +19,17 @@ Device columns: `hostname, brand, model, ip, mac, vlan, subnet, location, serial
 
 **Inventory table** — add/edit devices, column filters, bulk select + bulk actions, print stylesheet for handoff sheets.
 
-**Brand/Model manager** — built-in catalog (`#netinv-brands-builtin`) + custom brand/model entries, persisted separately.
+**Add Device modal** — `+ Add Device` opens a form (name, brand/model, IP/MAC, VLAN/subnet, location/serial, credentials, status, notes) instead of dropping a blank row into the table; IP auto-fills from the default VLAN's subnet. Brand and Model are type-or-pick fields — typing one that isn't in the catalog yet adds it to the custom brand/model list on submit.
+
+**Brand/Model manager** — built-in catalog (`#netinv-brands-builtin`) + custom brand/model entries, persisted separately. New entries can also be added inline from the Add Device modal, not just the manager itself.
 
 **VLAN manager** — custom VLAN list, tied into device records and CSV/JSON payloads.
 
-**Subnet scanner** — target parser accepts single IP, CIDR (`192.168.1.0/24`), or dash range (`192.168.1.1-50`). Probes hosts client-side via `fetch(..., {mode:"no-cors"})` against a configurable port profile with timeout — this is a reachability probe, not a real SYN scan (browser sandboxing limits it to whatever ports the JS engine will attempt HTTP-ish connects on).
+**Subnet scanner** — target parser accepts single IP, CIDR (`192.168.1.0/24`), or dash range (`192.168.1.1-50`). Probes hosts client-side via `fetch(..., {mode:"no-cors"})` against a configurable port profile with timeout — this is a reachability probe, not a real SYN scan (browser sandboxing limits it to whatever ports the JS engine will attempt HTTP-ish connects on). Since that only finds hosts with a web-ish port open, a `⧉ nmap` button next to the target field copies the equivalent `sudo nmap -sn <target> -oX scan.xml` command for a full host discovery scan outside the browser.
 
 **Port profiles** — predefined port sets (web, etc.) for the scanner.
 
-**Nmap import** — parses `-oN` (plain text), `-oG` (grepable), and `-oX` (XML) nmap output; appends discovered hosts to inventory.
+**Nmap import** — parses `-oN` (plain text), `-oG` (grepable), and `-oX` (XML) nmap output; appends discovered hosts to inventory. Also populates the model field where it can — from `-sV` service banners, falling back to `-O` OS-fingerprint vendor/type, then `http-title`/`snmp-sysdescr` script output — and captures MAC/vendor from all three formats, including grepable.
 
 **IP autofill** — sequential IP fill helper tied to the site subnet field.
 
