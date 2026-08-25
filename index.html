@@ -151,7 +151,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:14p
 .mf label{font-family:var(--mono);font-size:9px;color:var(--text-dim);
   letter-spacing:.1em;text-transform:uppercase;min-width:54px}
 .mf input,.mf select{
-  flex:1;background:var(--surface2);border:1px solid var(--border2);
+  flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border2);
   color:var(--text);font-family:var(--mono);font-size:12px;
   padding:6px 9px;border-radius:3px;outline:none;
 }
@@ -644,7 +644,7 @@ td.td-check{text-align:center;padding:0 4px}
 
 <!-- PRIMARY TOOLBAR -->
 <div class="toolbar">
-  <button class="btn bp" onclick="addRow()">＋ Add Device</button>
+  <button class="btn bp" onclick="openAddDeviceModal()">＋ Add Device</button>
   <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);white-space:nowrap">Default VLAN:</label>
   <select id="defaultVlanSelect" class="fsel" title="VLAN assigned to new rows" onchange="resizeDefaultVlanSelect()"></select>
   <button class="btn bd" onclick="clearAll()">✕ Clear All</button>
@@ -653,6 +653,67 @@ td.td-check{text-align:center;padding:0 4px}
     <input id="searchBox" placeholder="Search devices…" oninput="render()">
   </div>
   <button class="btn btn-fit" id="fitBtn" onclick="toggleFitMode()" title="Toggle fit-to-screen mode — see all columns without scrolling">⊞ Fit Screen</button>
+</div>
+
+<!-- ════ ADD DEVICE MODAL ════ -->
+<div class="modal-overlay" id="addDeviceModal" onclick="closeAddDeviceModal(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h2>＋ Add Device</h2>
+    <form onsubmit="submitAddDevice(event)">
+      <div class="mf">
+        <label>Name</label>
+        <input id="addDevHostname" placeholder="Hostname">
+      </div>
+      <div class="mf">
+        <label>Brand</label>
+        <input id="addDevBrand" list="addDevBrandList" placeholder="Brand (pick or type new)" oninput="populateAddDeviceModelSelect()">
+        <datalist id="addDevBrandList"></datalist>
+        <label style="min-width:44px">Model</label>
+        <input id="addDevModel" list="addDevModelList" placeholder="Model (pick or type new)">
+        <datalist id="addDevModelList"></datalist>
+      </div>
+      <div class="mf">
+        <label>IP</label>
+        <input id="addDevIp" placeholder="0.0.0.0 / DHCP">
+        <label style="min-width:38px">MAC</label>
+        <input id="addDevMac" placeholder="AA:BB:CC:DD:EE:FF">
+      </div>
+      <div class="mf">
+        <label>VLAN</label>
+        <select id="addDevVlan"></select>
+        <label style="min-width:50px">Subnet</label>
+        <input id="addDevSubnet" placeholder="255.255.255.0">
+      </div>
+      <div class="mf">
+        <label>Location</label>
+        <input id="addDevLocation" placeholder="Rack / Room / Port">
+        <label style="min-width:44px">Serial</label>
+        <input id="addDevSerial" placeholder="SN / Asset#">
+      </div>
+      <div class="mf">
+        <label>User</label>
+        <input id="addDevUsername" placeholder="admin">
+        <label style="min-width:44px">Pass</label>
+        <input id="addDevPassword" type="password" placeholder="••••••">
+      </div>
+      <div class="mf">
+        <label>Status</label>
+        <select id="addDevStatus">
+          <option>Unknown</option>
+          <option>Online</option>
+          <option>Offline</option>
+        </select>
+      </div>
+      <div class="mf">
+        <label>Notes</label>
+        <input id="addDevNotes" placeholder="Notes…">
+      </div>
+      <div class="modal-footer">
+        <button type="button" onclick="closeAddDeviceModal()">✕ Cancel</button>
+        <button type="submit" class="mbtn" style="margin-left:8px">＋ Add Device</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <!-- ════ VLAN MANAGER MODAL ════ -->
@@ -1432,6 +1493,84 @@ function addRow(prefill={}){
     if(tr){tr.scrollIntoView({block:"center",behavior:"smooth"});tr.classList.add("new-flash")}
   },80);
   return d.id;
+}
+
+// ─── ADD DEVICE MODAL ─────────────────────────────────────────────────────────
+function openAddDeviceModal(){
+  const defVlan=(document.getElementById("defaultVlanSelect")||{}).value||"";
+  const defVlanDef=defVlan?getVlan(defVlan):null;
+  const subnet=defVlanDef&&defVlanDef.subnet?defVlanDef.subnet:(document.getElementById("siteSubnet").value||"");
+  const autoIP=subnet?nextAvailableIP(subnet,defVlanDef&&defVlanDef.dhcpStart,defVlanDef&&defVlanDef.dhcpEnd):"";
+  document.getElementById("addDevHostname").value="";
+  populateAddDeviceBrandSelect();
+  document.getElementById("addDevBrand").value="";
+  document.getElementById("addDevModel").value="";
+  populateAddDeviceModelSelect();
+  document.getElementById("addDevIp").value=autoIP;
+  document.getElementById("addDevMac").value="";
+  populateAddDeviceVlanSelect();
+  document.getElementById("addDevVlan").value=defVlan;
+  document.getElementById("addDevSubnet").value=subnet;
+  document.getElementById("addDevLocation").value="";
+  document.getElementById("addDevSerial").value="";
+  document.getElementById("addDevUsername").value="";
+  document.getElementById("addDevPassword").value="";
+  document.getElementById("addDevStatus").value="Unknown";
+  document.getElementById("addDevNotes").value="";
+  document.getElementById("addDeviceModal").classList.add("show");
+  setTimeout(()=>document.getElementById("addDevHostname").focus(),80);
+}
+function closeAddDeviceModal(ev){
+  if(ev&&ev.target!==document.getElementById("addDeviceModal"))return;
+  document.getElementById("addDeviceModal").classList.remove("show");
+}
+function populateAddDeviceBrandSelect(){
+  document.getElementById("addDevBrandList").innerHTML=
+    Object.keys(getBrands()).map(b=>`<option value="${e(b)}">`).join("");
+}
+function populateAddDeviceModelSelect(){
+  const brand=document.getElementById("addDevBrand").value;
+  const mList=brand?(getBrands()[brand]||[]):Object.values(getBrands()).flat().filter((v,i,a)=>a.indexOf(v)===i);
+  document.getElementById("addDevModelList").innerHTML=mList.map(m=>`<option value="${e(m)}">`).join("");
+}
+// Brand/model typed in the Add Device modal that aren't in the catalog yet get
+// folded into BRANDS_CUSTOM so they persist and show up in the Brand Manager too.
+function persistNewBrandModel(brand,model){
+  if(!brand)return;
+  if(!BRANDS_BUILTIN[brand]&&!BRANDS_CUSTOM[brand])BRANDS_CUSTOM[brand]=[];
+  if(model){
+    const known=[...(BRANDS_BUILTIN[brand]||[]),...(BRANDS_CUSTOM[brand]||[])];
+    if(!known.includes(model)){
+      if(!BRANDS_CUSTOM[brand])BRANDS_CUSTOM[brand]=[];
+      BRANDS_CUSTOM[brand].push(model);
+    }
+  }
+  saveCustomBrands();
+}
+function populateAddDeviceVlanSelect(){
+  document.getElementById("addDevVlan").innerHTML=
+    '<option value="">— None —</option>'+getVlans().map(x=>`<option value="${x.v}">${x.v} — ${x.l}</option>`).join("");
+}
+function submitAddDevice(ev){
+  if(ev)ev.preventDefault();
+  const prefill={
+    hostname:document.getElementById("addDevHostname").value.trim(),
+    brand:document.getElementById("addDevBrand").value.trim(),
+    model:document.getElementById("addDevModel").value.trim(),
+    ip:document.getElementById("addDevIp").value.trim(),
+    mac:document.getElementById("addDevMac").value.trim(),
+    vlan:document.getElementById("addDevVlan").value,
+    subnet:document.getElementById("addDevSubnet").value.trim(),
+    location:document.getElementById("addDevLocation").value.trim(),
+    serial:document.getElementById("addDevSerial").value.trim(),
+    username:document.getElementById("addDevUsername").value.trim(),
+    password:document.getElementById("addDevPassword").value,
+    status:document.getElementById("addDevStatus").value,
+    notes:document.getElementById("addDevNotes").value.trim(),
+  };
+  persistNewBrandModel(prefill.brand,prefill.model);
+  addRow(prefill);
+  closeAddDeviceModal();
 }
 function delRow(id){if(!confirm("Delete this device?"))return;devices=devices.filter(d=>d.id!==id);save();render();stats()}
 function dupRow(id){const d=devices.find(d=>d.id===id);if(!d)return;const c={...d,id:nextId++,ip:"",hostname:d.hostname+" (copy)"};devices.splice(devices.indexOf(d)+1,0,c);save();render();stats()}
