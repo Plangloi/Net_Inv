@@ -469,7 +469,8 @@ footer{text-align:center;margin-top:34px;padding:13px 0;font-family:var(--mono);
   border:1px solid var(--border2);color:var(--text-dim);background:transparent;
   cursor:pointer;transition:all .13s;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
 .bbtn:hover{border-color:var(--amber);color:var(--amber)}
-.bbtn.danger:hover{border-color:var(--red);color:var(--red)}
+.bbtn.danger{border-color:var(--red);color:var(--red)}
+.bbtn.danger:hover{background:var(--red);border-color:var(--red);color:#fff}
 .bbtn.cyan{border-color:var(--cyan);color:var(--cyan)}
 .bbtn.cyan:hover{background:var(--cyan);color:#0d0f12}
 /* checkbox */
@@ -904,6 +905,7 @@ td.td-check{text-align:center;padding:0 4px}
   <button class="bbtn" onclick="bulkStatus('Online')">→ Online</button>
   <button class="bbtn" onclick="bulkStatus('Offline')">→ Offline</button>
   <button class="bbtn" onclick="bulkStatus('Unknown')">→ Unknown</button>
+  <button class="bbtn" onclick="bulkAutoVlan()" title="Assign VLAN from IP subnet to selected rows that have no VLAN">⬡ Auto-VLAN</button>
   <button class="bbtn danger" onclick="bulkDelete()">✕ Delete Selected</button>
   <button class="bbtn" onclick="selectNone()" style="margin-left:auto">✕ Deselect</button>
 </div>
@@ -1255,6 +1257,7 @@ function render(){
     });
   }
 
+  const keepSel=new Set(getCheckedIds());
   body.innerHTML="";
   let lastVlan=null, rowNum=0;
 
@@ -1302,15 +1305,15 @@ function render(){
     }
 
     tr.innerHTML=`
-<td class="td-check"><input type="checkbox" class="row-check" data-id="${d.id}" onchange="onRowCheck()"></td>
+<td class="td-check"><input type="checkbox" class="row-check" data-id="${d.id}"${keepSel.has(d.id)?" checked":""} onchange="onRowCheck()"></td>
 <td class="cn">${rowNum}</td>
-<td><input class="ci" value="${e(d.hostname)}" placeholder="hostname" oninput="upd(${d.id},'hostname',this.value)"></td>
+<td><input class="ci" value="${e(d.hostname)}" placeholder="hostname" oninput="upd(${d.id},'hostname',this.value)" onchange="syncHostnames(${d.id},this.value)"></td>
 <td><select class="cs" onchange="updB(${d.id},this.value);resizeSelect(this)">${bOpts}</select></td>
-<td><select class="cs" onchange="upd(${d.id},'model',this.value);resizeSelect(this)">${mOpts}</select></td>
+<td><select class="cs" onchange="updSel(${d.id},'model',this.value,true);resizeSelect(this)">${mOpts}</select></td>
 <td>
   <div class="ip-wrap">
     <input id="ipi${d.id}" class="ci${dup?" idup":""}" value="${e(d.ip)}" placeholder="0.0.0.0 / DHCP" style="width:130px;min-width:130px"
-      onchange="upd(${d.id},'ip',this.value);render();stats()">
+      onchange="onIpChange(${d.id},this.value)">
     ${dup?'<span class="db">DUP</span>':""}
     ${vlanDhcpTag}
     <button class="copy-btn" onclick="copyText('${e(d.ip)}',this)" title="Copy IP">⧉</button>
@@ -1338,13 +1341,13 @@ function render(){
     <div class="vlan-menu" id="vlm${d.id}"></div>
   </div>
 </td>
-<td><input class="ci" value="${e(d.subnet)}" placeholder="255.255.255.0" style="min-width:108px" oninput="upd(${d.id},'subnet',this.value)"></td>
-<td><input class="ci" value="${e(d.location)}" placeholder="Rack / Room / Port" style="min-width:115px" oninput="upd(${d.id},'location',this.value)"></td>
+<td><input class="ci" value="${e(d.subnet)}" placeholder="255.255.255.0" style="min-width:108px" data-f="subnet" oninput="updSel(${d.id},'subnet',this.value)"></td>
+<td><input class="ci" value="${e(d.location)}" placeholder="Rack / Room / Port" style="min-width:115px" data-f="location" oninput="updSel(${d.id},'location',this.value)"></td>
 <td><input class="ci" value="${e(d.serial)}" placeholder="SN / Asset#" oninput="upd(${d.id},'serial',this.value)"></td>
-<td><input class="ci" value="${e(d.username)}" placeholder="admin" style="width:82px" oninput="upd(${d.id},'username',this.value)"></td>
-<td><div class="pw-w"><input class="ci" type="password" id="pw${d.id}" value="${e(d.password)}" placeholder="••••••" style="width:90px" oninput="upd(${d.id},'password',this.value)"><button class="eye" onclick="tpwd(${d.id})">👁</button></div></td>
+<td><input class="ci" value="${e(d.username)}" placeholder="admin" style="width:82px" data-f="username" oninput="updSel(${d.id},'username',this.value)"></td>
+<td><div class="pw-w"><input class="ci" type="password" id="pw${d.id}" value="${e(d.password)}" placeholder="••••••" style="width:90px" data-f="password" oninput="updSel(${d.id},'password',this.value)"><button class="eye" onclick="tpwd(${d.id})">👁</button></div></td>
 <td>
-  <select class="ssel ${scl}" id="ss${d.id}" onchange="upd(${d.id},'status',this.value);this.className='ssel '+sc(this.value);stats()">
+  <select class="ssel ${scl}" id="ss${d.id}" onchange="updSel(${d.id},'status',this.value,true);stats()">
     <option${d.status==="Online"?" selected":""}>Online</option>
     <option${d.status==="Offline"?" selected":""}>Offline</option>
     <option${d.status==="Unknown"?" selected":""}>Unknown</option>
@@ -1354,11 +1357,12 @@ function render(){
   <button class="pb" id="pb${d.id}" onclick="pingOne(${d.id})">⬢ Test</button>
   <div class="pr" id="pr${d.id}"></div>
 </td>
-<td><input class="ci" value="${e(d.notes)}" placeholder="Notes…" style="min-width:130px" oninput="upd(${d.id},'notes',this.value)"></td>
+<td><input class="ci" value="${e(d.notes)}" placeholder="Notes…" style="min-width:130px" data-f="notes" oninput="updSel(${d.id},'notes',this.value)"></td>
 <td><div class="ra"><button class="rb dup" onclick="dupRow(${d.id})" title="Duplicate">⧉</button><button class="rb del" onclick="delRow(${d.id})" title="Delete">✕</button></div></td>`;
     body.appendChild(tr);
     tr.querySelectorAll("select.cs").forEach(resizeSelect);
   });
+  onRowCheck();
   const banner=document.getElementById("dupBanner");
   if(dups.size){
     banner.classList.add("show");
@@ -1415,6 +1419,62 @@ const VLAN_DEFAULTS=[
 let VLANS_CUSTOM=[];
 function getVlans(){return VLANS_CUSTOM.length?VLANS_CUSTOM:[...VLAN_DEFAULTS]}
 function getVlan(v){return getVlans().find(x=>x.v===v)}
+// Auto-VLAN: find the configured VLAN whose subnet contains this IP
+// (most specific / longest prefix wins). Returns the VLAN def or null.
+function vlanForIP(ip){
+  if(!/^\d{1,3}(\.\d{1,3}){3}$/.test((ip||"").trim()))return null;
+  const n=ip2n(ip.trim());
+  let best=null,bestBits=-1;
+  getVlans().forEach(vd=>{
+    const [base,b]=(vd.subnet||"").split("/");
+    const bits=parseInt(b);
+    if(!base||isNaN(bits)||bits<0||bits>32)return;
+    const mask=bits?(~((1<<(32-bits))-1))>>>0:0;
+    if(((n&mask)>>>0)===((ip2n(base)&mask)>>>0)&&bits>bestBits){best=vd;bestBits=bits}
+  });
+  return best;
+}
+// VLAN + subnet for a discovered device: matching VLAN, else the Default VLAN
+function autoVlanFields(ip){
+  const vd=vlanForIP(ip);
+  if(vd)return{vlan:vd.v,subnet:vd.subnet};
+  const defVlan=(document.getElementById("defaultVlanSelect")||{}).value||"";
+  const defDef=defVlan?getVlan(defVlan):null;
+  return{vlan:defVlan,subnet:(defDef&&defDef.subnet)||document.getElementById("siteSubnet").value||""};
+}
+// Manual IP edit: fill VLAN (and empty subnet) only when the row has no VLAN yet
+// With a multi-row selection, peers get the next free IPs (.51, .52…);
+// non-IP text like "DHCP" is copied as-is.
+function onIpChange(id,val){
+  const peers=selPeers(id);
+  const ips=[val];
+  if(peers.length&&/^\d{1,3}(\.\d{1,3}){3}$/.test(val.trim())){
+    const used=new Map(devices.filter(d=>d.id!==id&&!peers.includes(d.id)&&d.ip).map(d=>[d.ip.trim(),d]));
+    const skipped=[];
+    let n=ip2n(val.trim());
+    peers.forEach(()=>{
+      for(;;){
+        n++;
+        const ip=n2ip(n);
+        if((n&255)===0||(n&255)===255)continue;
+        if(used.has(ip)){skipped.push(`${ip} (used by ${used.get(ip).hostname||"unnamed device"})`);continue}
+        ips.push(ip);break;
+      }
+    });
+    if(skipped.length){
+      document.getElementById("logBody").classList.remove("hidden");
+      document.getElementById("ltgl").textContent="hide";
+      log(`Multi-edit IP: skipped ${skipped.join(", ")}`,"warn");
+    }
+  }else peers.forEach(()=>ips.push(val));
+  [id,...peers].forEach((x,i)=>{
+    const d=devices.find(d=>d.id===x);if(!d)return;
+    d.ip=ips[i];
+    const vd=vlanForIP(d.ip);
+    if(!d.vlan&&vd){d.vlan=vd.v;if(!d.subnet&&vd.subnet)d.subnet=vd.subnet}
+  });
+  save();render();stats();
+}
 function resizeSelect(sel){
   if(!sel)return;
   const text=(sel.options[sel.selectedIndex]||{}).text||"";
@@ -1473,6 +1533,11 @@ function pickVlanCustom(id){
 function nextAvailableIp(cidr){ return nextAvailableIP(cidr,"","") || null; }
 
 function pickVlan(id, val){
+  [id,...selPeers(id)].forEach(x=>applyVlan(x,val));
+  document.querySelectorAll(".vlan-menu.show").forEach(m=>m.classList.remove("show"));
+  render();
+}
+function applyVlan(id, val){
   upd(id,"vlan",val);
   const inp=document.getElementById(`vli${id}`);
   if(inp)inp.value=val;
@@ -1499,8 +1564,6 @@ function pickVlan(id, val){
       }
     }
   }
-  document.querySelectorAll(".vlan-menu.show").forEach(m=>m.classList.remove("show"));
-  render();
 }
 // close VLAN menus on outside click
 document.addEventListener("click",()=>{
@@ -1590,7 +1653,31 @@ function autoFillIPs(){
 
 // ─── DATA OPS ─────────────────────────────────────────────────────────────────
 function upd(id,f,v){const d=devices.find(d=>d.id===id);if(d){d[f]=v;save()}}
-function updB(id,brand){const d=devices.find(d=>d.id===id);if(!d)return;d.brand=brand;d.model="";save();render()}
+function updB(id,brand){[id,...selPeers(id)].forEach(x=>{const d=devices.find(d=>d.id===x);if(d){d.brand=brand;d.model=""}});save();render()}
+// ─── MULTI-ROW EDIT ───────────────────────────────────────────────────────────
+// When the edited row is part of a checked selection (2+ rows), the edit is
+// applied to every other checked row too. Peers are returned in table order.
+function selPeers(id){const ids=getCheckedIds();return ids.length>1&&ids.includes(id)?ids.filter(x=>x!==id):[]}
+function updSel(id,f,v,rerender){
+  upd(id,f,v);
+  const peers=selPeers(id);
+  if(!peers.length)return;
+  peers.forEach(pid=>{
+    const d=devices.find(x=>x.id===pid);if(d)d[f]=v;
+    if(!rerender){const el=document.querySelector(`tr[data-id="${pid}"] [data-f="${f}"]`);if(el&&el.value!==v)el.value=v;}
+  });
+  save();
+  if(rerender)render();
+}
+// Hostname: "NVX-ENC" → NVX-ENC-01, -02…  /  "NVX-ENC-05" → -05, -06…
+function syncHostnames(id,val){
+  const peers=selPeers(id);
+  if(!peers.length||!val.trim())return;
+  const m=val.match(/^(.*?)(\d+)$/);
+  const base=m?m[1]:val+"-", start=m?parseInt(m[2]):1, width=m?m[2].length:2;
+  [id,...peers].forEach((x,i)=>{const d=devices.find(d=>d.id===x);if(d)d.hostname=base+String(start+i).padStart(width,"0")});
+  save();render();
+}
 function addRow(prefill={}){
   const defVlan=(document.getElementById("defaultVlanSelect")||{}).value||"";
   const defVlanDef=defVlan?getVlan(defVlan):null;
@@ -2000,7 +2087,6 @@ function selectNoneResults(){
 function addSelectedToInventory(){
   const selected=[...document.querySelectorAll(".scan-result-item.selected")].map(d=>d.dataset.ip);
   if(!selected.length){slog("No items selected.","warn");return}
-  const subnet=document.getElementById("siteSubnet").value||document.getElementById("scanSubnet").value||"";
   let added=0;
   selected.forEach(ip=>{
     const card=document.querySelector(`.scan-result-item[data-ip="${ip}"]`);
@@ -2009,7 +2095,8 @@ function addSelectedToInventory(){
     const svcNote=services.length
       ? "Ports: "+services.map(s=>s.hasWeb?`${s.svc}(${s.port})`:s.svc).join(", ")
       : "Added by subnet scan";
-    addRow({ip,status:"Online",subnet,notes:svcNote});
+    const av=autoVlanFields(ip);
+    addRow({ip,status:"Online",vlan:av.vlan,subnet:av.subnet||document.getElementById("scanSubnet").value||"",notes:svcNote});
     added++;
     // Mark card as already-added
     if(card){card.classList.remove("selected");card.classList.add("already");card.onclick=null;
@@ -2074,7 +2161,7 @@ function onRowCheck(){
   const lbl=document.getElementById("bulkLabel");
   if(ids.length){
     bar.classList.add("show");
-    lbl.textContent=`${ids.length} row${ids.length!==1?"s":""} selected`;
+    lbl.textContent=`${ids.length} row${ids.length!==1?"s":""} selected${ids.length>1?" — edits apply to all":""}`;
   } else {
     bar.classList.remove("show");
   }
@@ -2097,6 +2184,20 @@ function bulkDelete(){
   if(!confirm(`Delete ${ids.length} device${ids.length!==1?"s":""}?`)) return;
   devices=devices.filter(d=>!ids.includes(d.id));
   save(); render(); stats(); selectNone();
+}
+function bulkAutoVlan(){
+  const ids=getCheckedIds();
+  if(!ids.length) return;
+  let set=0,skipped=0;
+  devices.filter(d=>ids.includes(d.id)&&!d.vlan).forEach(d=>{
+    const vd=vlanForIP(d.ip);
+    if(!vd){skipped++;return}
+    d.vlan=vd.v;
+    if(!d.subnet&&vd.subnet)d.subnet=vd.subnet;
+    set++;
+  });
+  save(); render(); stats(); selectNone();
+  log(`Auto-VLAN: ${set} assigned${skipped?`, ${skipped} with no matching VLAN subnet`:""}`,set?"ok":"warn");
 }
 function bulkStatus(status){
   const ids=getCheckedIds();
@@ -2497,10 +2598,11 @@ function importNmap(inp){
     else if(txt.includes("Status: Up"))       devs=parseNmapGrepable(txt);
     else                                       devs=parseNmapText(txt);
     if(!devs.length){alert("No live hosts found in nmap output.");return;}
-    const subnet=document.getElementById("siteSubnet").value||"";
     devs.forEach(d=>{
       d.id=nextId++;
-      if(!d.subnet&&subnet) d.subnet=subnet;
+      const av=autoVlanFields(d.ip);
+      if(!d.vlan) d.vlan=av.vlan;
+      if(!d.subnet&&av.subnet) d.subnet=av.subnet;
     });
     if(confirm(`Import ${devs.length} host(s) from nmap? (appended to inventory)`)){
       devices.push(...devs);save();render();stats();
