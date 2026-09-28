@@ -7,3 +7,10 @@ __pycache__/
 server/.venv/
 .env
 .DS_Store
+
+# Scan exports (nmap / LanScan)
+scan.xml
+av-scan.xml
+*.gnmap
+*.nmap
+LanScan-Scan*.txt

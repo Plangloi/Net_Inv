@@ -33,7 +33,11 @@ Device columns: `hostname, brand, model, ip, mac, vlan, subnet, location, serial
 
 **Port profiles** — predefined port sets (web, etc.) for the scanner.
 
+**AV protocol ports** — a catalog of AV control/media/sync ports (Q-SYS QRC 1710 / ECP 1702 / QDP 2467, Dante 4440/4455/8700/8800, AES67 SAP 9875, RAVENNA RTSP 554, Riedel RRCS 8193, Ember+ 9000, PTP 319/320, mDNS 5353, NDI 5959/5960, VISCA-over-IP 52381, Blackmagic Videohub/HyperDeck/ATEM, PJLink 4352, sACN 5568, Art-Net 6454, Crestron CIP/CTP 41794–41797, AMX ICSP 1319, Shure 2202, Symetrix 48630/48631, Yamaha RCP 49280, plus SSH/Telnet/SNMP). These aren't HTTP, so the browser scanner can't detect them. Instead, the `⧉ nmap AV` button copies a TCP+UDP `nmap -sS -sU -sV` command for those ports, and nmap import labels matching open ports with their AV name in Notes (e.g. `1710/tcp(Q-SYS QRC)`). AVB/Milan is Layer 2 only (no IP ports), so it can't be port-scanned.
+
 **Nmap import** — parses `-oN` (plain text), `-oG` (grepable), and `-oX` (XML) nmap output; appends discovered hosts to inventory. Also populates the model field where it can — from `-sV` service banners, falling back to `-O` OS-fingerprint vendor/type, then `http-title`/`snmp-sysdescr` script output — and captures MAC/vendor from all three formats, including grepable.
+
+**LanScan import** — `↓ Import LanScan` reads the semicolon-separated `.txt` export from the macOS LanScan app. Columns are matched by header name: IP, hostname (falling back to mDNS/DNS/SMB name), vendor → brand, MAC, and Ping (`1` → Online, `0` → Offline, blank → Unknown). mDNS/SMB names that differ from the hostname, TCP ports (AV ports labeled, as for nmap) and comments go to Notes. The free version's truncated Identification (`Son*** Upgrade to Pro … ***`) is dropped. Hosts get auto-VLAN like nmap imports. Both nmap and LanScan imports skip IPs already in the inventory (and duplicate IPs within the file); the confirm dialog says how many were skipped.
 
 **IP autofill** — sequential IP fill helper tied to the site subnet field.
 

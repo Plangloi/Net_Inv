@@ -745,12 +745,14 @@ footer{border-top:none;color:var(--text-muted)}
       <div class="sbtn-drop-sep"></div>
       <button class="sbtn-drop-item" onclick="document.getElementById('imp').click();closeIoDrop()" title="Import CSV or JSON">↓ Import CSV / JSON</button>
       <button class="sbtn-drop-item" onclick="document.getElementById('impNmap').click();closeIoDrop()" title="Import nmap output">↓ Import nmap</button>
+      <button class="sbtn-drop-item" onclick="document.getElementById('impLanScan').click();closeIoDrop()" title="Import LanScan export (semicolon-separated .txt/.csv)">↓ Import LanScan</button>
       <div class="sbtn-drop-sep"></div>
       <button class="sbtn-drop-item" onclick="window.print();closeIoDrop()" title="Print inventory">⎙ Print</button>
     </div>
   </div>
   <input type="file" id="imp" accept=".csv,.json" class="hidden" onchange="importFile(this)">
   <input type="file" id="impNmap" accept=".txt,.nmap,.xml,.gnmap" class="hidden" onchange="importNmap(this)">
+  <input type="file" id="impLanScan" accept=".txt,.csv" class="hidden" onchange="importLanScan(this)">
   <div class="sbtn-sep"></div>
   <!-- IP Auto-fill -->
   <div class="ipfill-wrap">
@@ -945,6 +947,7 @@ footer{border-top:none;color:var(--text-muted)}
         <div style="display:flex;gap:6px">
           <input id="scanSubnet" placeholder="192.168.1.0/24" value="">
           <button class="btn bo" style="padding:4px 8px;font-size:10px" title="Copy equivalent nmap command for a full host discovery scan" onclick="copyNmapCmd(this)">⧉ nmap</button>
+          <button class="btn bo" style="padding:4px 8px;font-size:10px" title="Copy nmap command that probes AV protocol ports (Q-SYS, Dante, NDI, Crestron, PTP, sACN, Art-Net…)" onclick="copyNmapAvCmd(this)">⧉ nmap AV</button>
         </div>
       </div>
       <div class="sc-field">
@@ -1952,6 +1955,62 @@ const PORT_PROFILES={
   ],
 };
 
+// ─── AV PROTOCOL PORTS ───────────────────────────────────────────────────────
+// Control / media / sync ports used by AV gear. Almost none are HTTP, so the
+// browser scanner above can't see them — this list drives the "⧉ nmap AV"
+// command and labels matching ports when nmap output is imported.
+// AVB / Milan (AVTP, AVDECC, MSRP, gPTP) is pure Layer 2 (Ethertype 0x22F0 /
+// 0x88F7) — no IP ports exist, so it can't be port-scanned.
+const AV_PORTS=[
+  // Audio networking
+  {port:1702, proto:"tcp",svc:"Q-SYS ECP"},
+  {port:1710, proto:"tcp",svc:"Q-SYS QRC"},
+  {port:2467, proto:"udp",svc:"Q-SYS QDP"},
+  {port:4440, proto:"tcp",svc:"Dante"},
+  {port:4440, proto:"udp",svc:"Dante"},
+  {port:4455, proto:"udp",svc:"Dante"},
+  {port:8700, proto:"udp",svc:"Dante Ctrl"},
+  {port:8800, proto:"udp",svc:"Dante Ctrl"},
+  {port:9875, proto:"udp",svc:"SAP (AES67)"},
+  {port:554,  proto:"tcp",svc:"RTSP (RAVENNA)"},
+  {port:8193, proto:"tcp",svc:"Riedel RRCS"},
+  {port:9000, proto:"tcp",svc:"Ember+"},
+  // Clock sync / discovery
+  {port:319,  proto:"udp",svc:"PTP Event"},
+  {port:320,  proto:"udp",svc:"PTP General"},
+  {port:5353, proto:"udp",svc:"mDNS"},
+  // Video
+  {port:5959, proto:"tcp",svc:"NDI Discovery"},
+  {port:5960, proto:"tcp",svc:"NDI"},
+  {port:52381,proto:"udp",svc:"VISCA/IP"},
+  {port:9990, proto:"tcp",svc:"BMD Videohub"},
+  {port:9993, proto:"tcp",svc:"BMD HyperDeck"},
+  {port:9910, proto:"udp",svc:"BMD ATEM"},
+  {port:4352, proto:"tcp",svc:"PJLink"},
+  // Lighting
+  {port:5568, proto:"udp",svc:"sACN"},
+  {port:6454, proto:"udp",svc:"Art-Net"},
+  // Control systems / DSP
+  {port:41794,proto:"tcp",svc:"Crestron CIP"},
+  {port:41795,proto:"tcp",svc:"Crestron CTP"},
+  {port:41796,proto:"tcp",svc:"Crestron CIP-TLS"},
+  {port:41797,proto:"tcp",svc:"Crestron CTP-TLS"},
+  {port:1319, proto:"tcp",svc:"AMX ICSP"},
+  {port:2202, proto:"tcp",svc:"Shure"},
+  {port:48630,proto:"udp",svc:"Symetrix"},
+  {port:48631,proto:"tcp",svc:"Symetrix"},
+  {port:49280,proto:"tcp",svc:"Yamaha RCP"},
+  // Generic management
+  {port:22,   proto:"tcp",svc:"SSH"},
+  {port:23,   proto:"tcp",svc:"Telnet"},
+  {port:161,  proto:"udp",svc:"SNMP"},
+];
+const AV_PORT_MAP=new Map(AV_PORTS.map(p=>[`${p.port}/${p.proto}`,p.svc]));
+// Prefer our AV label over nmap's generic service name ("unknown", "ssdp", …)
+function avSvcName(port,proto,fallback){
+  return AV_PORT_MAP.get(`${port}/${proto}`)||fallback;
+}
+
 // Probe a single port — returns {open, hasWeb, svc, port, proto, ms}
 // Detection logic:
 //   fetch success          → port open, web interface present
@@ -2244,6 +2303,11 @@ async function pingSelected(){
 function copyNmapCmd(btn){
   const subnet=document.getElementById("scanSubnet").value.trim()||"192.168.1.0/24";
   copyText(`sudo nmap -sn ${subnet} -oX scan.xml`, btn);
+}
+function copyNmapAvCmd(btn){
+  const subnet=document.getElementById("scanSubnet").value.trim()||"192.168.1.0/24";
+  const list=proto=>[...new Set(AV_PORTS.filter(p=>p.proto===proto).map(p=>p.port))].sort((a,b)=>a-b).join(",");
+  copyText(`sudo nmap -sS -sU -sV --version-light --open -p T:${list("tcp")},U:${list("udp")} ${subnet} -oX av-scan.xml`, btn);
 }
 function copyText(text, btn){
   if(!text||text==="") return;
@@ -2597,18 +2661,79 @@ function importNmap(inp){
     if(txt.trimStart().startsWith("<?xml"))   devs=parseNmapXML(txt);
     else if(txt.includes("Status: Up"))       devs=parseNmapGrepable(txt);
     else                                       devs=parseNmapText(txt);
-    if(!devs.length){alert("No live hosts found in nmap output.");return;}
-    devs.forEach(d=>{
-      d.id=nextId++;
-      const av=autoVlanFields(d.ip);
-      if(!d.vlan) d.vlan=av.vlan;
-      if(!d.subnet&&av.subnet) d.subnet=av.subnet;
-    });
-    if(confirm(`Import ${devs.length} host(s) from nmap? (appended to inventory)`)){
-      devices.push(...devs);save();render();stats();
-    }
+    appendScannedDevices(devs,"nmap");
   };
   r.readAsText(file);inp.value="";
+}
+
+// Shared tail of the scan-file importers: assign ids + auto-VLAN, confirm, append.
+function appendScannedDevices(devs,source){
+  if(!devs.length){alert(`No hosts found in ${source} output.`);return;}
+  // Skip IPs already in inventory (and repeats within the file itself)
+  const seen=new Set(devices.map(d=>d.ip).filter(Boolean));
+  const total=devs.length;
+  devs=devs.filter(d=>!seen.has(d.ip)&&seen.add(d.ip));
+  const skipped=total-devs.length;
+  const skipMsg=skipped?` — ${skipped} existing/duplicate IP(s) skipped`:"";
+  if(!devs.length){alert(`All ${total} host(s) from ${source} are already in inventory.`);return;}
+  devs.forEach(d=>{
+    d.id=nextId++;
+    const av=autoVlanFields(d.ip);
+    if(!d.vlan) d.vlan=av.vlan;
+    if(!d.subnet&&av.subnet) d.subnet=av.subnet;
+  });
+  if(confirm(`Import ${devs.length} new host(s) from ${source}?${skipMsg}`)){
+    devices.push(...devs);save();render();stats();
+  }
+}
+
+// ─── LANSCAN IMPORT ──────────────────────────────────────────────────────────
+// LanScan (macOS) export: semicolon-separated, header row
+//   Ping;IPv4 address;Hostname;Vendor;Identification;MAC address;SMB Name;
+//   SMB Domain;mDNS Name;DNS Name;Comments;TCP Ports
+// Ping is 1/0 (blank when not tested). Columns are looked up by header name so
+// a reordered/extended export still maps.
+function importLanScan(inp){
+  const file=inp.files[0];if(!file)return;
+  const r=new FileReader();
+  r.onload=ev=>appendScannedDevices(parseLanScan(ev.target.result),"LanScan");
+  r.readAsText(file);inp.value="";
+}
+function parseLanScan(txt){
+  const lines=txt.replace(/^\uFEFF/,"").split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length)return [];
+  const head=lines[0].split(";").map(h=>h.trim().toLowerCase());
+  const col=(row,...names)=>{
+    for(const n of names){const i=head.indexOf(n);if(i>=0&&(row[i]||"").trim())return row[i].trim();}
+    return "";
+  };
+  if(!head.includes("ipv4 address")){alert("Not a LanScan export (no \"IPv4 address\" column).");return [];}
+  const devs=[];
+  for(const line of lines.slice(1)){
+    const row=line.split(";");
+    const ip=col(row,"ipv4 address");
+    if(!/^\d+\.\d+\.\d+\.\d+$/.test(ip))continue;
+    const ping=col(row,"ping");
+    // Free LanScan truncates Identification to 3 chars + an upgrade nag — useless, drop it.
+    let ident=col(row,"identification");
+    if(ident.includes("***"))ident="";
+    const hostname=col(row,"hostname","mdns name","dns name","smb name");
+    const notes=[];
+    const mdns=col(row,"mdns name");
+    if(mdns&&mdns!==hostname)notes.push(`mDNS: ${mdns}`);
+    const smb=[col(row,"smb name"),col(row,"smb domain")].filter(Boolean).join("@");
+    if(smb&&smb!==hostname)notes.push(`SMB: ${smb}`);
+    const ports=(col(row,"tcp ports").match(/\d+/g)||[]).map(p=>{
+      const n=avSvcName(p,"tcp","");return n?`${p}/tcp(${n})`:`${p}/tcp`;
+    });
+    if(ports.length)notes.push(ports.join(", "));
+    const comment=col(row,"comments");
+    if(comment)notes.push(comment);
+    devs.push({hostname,ip,mac:col(row,"mac address").toUpperCase(),brand:col(row,"vendor"),model:ident,
+               vlan:"",subnet:"",location:"",serial:"",username:"",password:"",
+               status:ping==="1"?"Online":ping==="0"?"Offline":"Unknown",notes:notes.join(" · ")});
+  }
+  return devs;
 }
 
 // Plain text: "Nmap scan report for 1.2.3.4" / "Host is up (Xs latency)."
@@ -2635,7 +2760,7 @@ function parseNmapText(txt){
     // Port lines: "80/tcp open http" or, with -sV, "80/tcp open http Crestron web server 2.0"
     const mPort=line.match(/^(\d+)\/(tcp|udp)\s+(open|filtered)\s+(\S+)(?:\s+(.+))?$/);
     if(mPort){
-      const svc=mPort[4],versionStr=mPort[5];
+      const svc=avSvcName(mPort[1],mPort[2],mPort[4]),versionStr=mPort[5];
       cur.notes=(cur.notes?cur.notes+", ":"")+`${mPort[1]}/${mPort[2]}(${svc})`;
       if(versionStr&&!cur.model)cur.model=versionStr.trim();
       continue;
@@ -2654,15 +2779,22 @@ function parseNmapText(txt){
 }
 
 // Grepable: "Host: 1.2.3.4 (hostname)	Status: Up ... Ports: 80/open/tcp//http//Crestron web server 2.0/ ... MAC: .. (Vendor)"
+// nmap writes several lines per host (a "Status:" line, then a "Ports:" line),
+// so merge them by IP into one device instead of one device per line.
 function parseNmapGrepable(txt){
-  const devs=[];
+  const byIp=new Map(),down=new Set();
   for(const line of txt.split(/\r?\n/)){
     if(!line.startsWith("Host:"))continue;
     const mIP=line.match(/Host:\s+(\d+\.\d+\.\d+\.\d+)\s+\(([^)]*)\)/);
     if(!mIP)continue;
     const ip=mIP[1],hostname=mIP[2]||"";
+    if(/Status:\s+Down/.test(line))down.add(ip);
     const mPorts=line.match(/Ports:\s+([^\t]+)/);
-    const notes=mPorts?mPorts[1].trim():"";
+    // Rewrite "1710/open/tcp//unknown//…" entries as "1710/tcp(Q-SYS QRC)"
+    const notes=mPorts?mPorts[1].split(/,\s*/).map(e=>{
+      const f=e.trim().split("/");
+      return f[1]==="open"?`${f[0]}/${f[2]}(${avSvcName(f[0],f[2],f[4]||"?")})`:null;
+    }).filter(Boolean).join(", "):"";
     // Each port entry is port/state/proto/owner/service/rpc_info/version/ — version
     // (7th field) is where -sV puts the product+version banner, e.g. model text.
     let model="";
@@ -2674,10 +2806,16 @@ function parseNmapGrepable(txt){
     }
     const mMac=line.match(/MAC:\s+([0-9A-F:]{17})(?:\s+\(([^)]*)\))?/i);
     const mac=mMac?mMac[1]:"",brand=mMac&&mMac[2]?mMac[2]:"";
-    devs.push({hostname,ip,mac,brand,model,vlan:"",subnet:"",
-               location:"",serial:"",username:"",password:"",status:"Online",notes});
+    const cur=byIp.get(ip);
+    if(!cur){
+      byIp.set(ip,{hostname,ip,mac,brand,model,vlan:"",subnet:"",
+                   location:"",serial:"",username:"",password:"",status:"Online",notes});
+    }else{
+      for(const [k,v] of Object.entries({hostname,mac,brand,model}))if(v&&!cur[k])cur[k]=v;
+      if(notes)cur.notes=cur.notes?`${cur.notes}, ${notes}`:notes;
+    }
   }
-  return devs;
+  return [...byIp.values()].filter(d=>!down.has(d.ip));
 }
 
 // XML: parse <host> elements
@@ -2694,7 +2832,10 @@ function parseNmapXML(txt){
       const openPorts=[...h.querySelectorAll("port")].filter(p=>
         p.querySelector("state")?.getAttribute("state")==="open"
       );
-      const notes=openPorts.map(p=>`${p.getAttribute("portid")}/${p.getAttribute("protocol")}(${p.querySelector("service")?.getAttribute("name")||"?"})`).join(", ");
+      const notes=openPorts.map(p=>{
+        const port=p.getAttribute("portid"),proto=p.getAttribute("protocol");
+        return `${port}/${proto}(${avSvcName(port,proto,p.querySelector("service")?.getAttribute("name")||"?")})`;
+      }).join(", ");
 
       // Model guess, best source first:
       // 1. -sV service banner (product [+version]) — usually the most literal brand/model string
