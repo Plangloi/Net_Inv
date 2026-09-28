@@ -2,6 +2,8 @@
 
 Single-file, browser-only network device inventory tool for AV/show site work. No server, no build, no dependencies — `index.html` is the whole app.
 
+![NET·INV inventory table grouped by VLAN](Screenshot/Net-INV%201.png)
+
 ## Quickstart
 
 ```bash
@@ -30,6 +32,8 @@ Device columns: `hostname, brand, model, ip, mac, vlan, subnet, location, serial
 **Multi-row edit** — with 2+ rows checked, editing one row applies to all of them: IP increments (skipping IPs already used, logged), hostname auto-numbers (`NVX-ENC` → `-01`, `-02`…), brand/model/VLAN/status/subnet/location/notes/credentials copy as-is. MAC and serial stay per-row.
 
 **Subnet scanner** — target parser accepts single IP, CIDR (`192.168.1.0/24`), or dash range (`192.168.1.1-50`). Probes hosts client-side via `fetch(..., {mode:"no-cors"})` against a configurable port profile with timeout — this is a reachability probe, not a real SYN scan (browser sandboxing limits it to whatever ports the JS engine will attempt HTTP-ish connects on). Since that only finds hosts with a web-ish port open, a `⧉ nmap` button next to the target field copies the equivalent `sudo nmap -sn <target> -oX scan.xml` command for a full host discovery scan outside the browser.
+
+![Subnet scanner panel with nmap / nmap AV buttons and port profile](Screenshot/Net-INV%202.png)
 
 **Port profiles** — predefined port sets (web, etc.) for the scanner.
 
