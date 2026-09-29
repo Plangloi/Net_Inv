@@ -1794,6 +1794,10 @@ function submitAddDevice(ev){
     status:document.getElementById("addDevStatus").value,
     notes:document.getElementById("addDevNotes").value.trim(),
   };
+  const dup=prefill.ip&&devices.find(d=>d.ip===prefill.ip);
+  if(dup&&!confirm(`⚠ IP ${prefill.ip} is already used by "${dup.hostname||dup.brand||"unnamed device"}".\n\nAdd this device anyway?`)){
+    document.getElementById("addDevIp").focus();return;
+  }
   persistNewBrandModel(prefill.brand,prefill.model);
   addRow(prefill);
   closeAddDeviceModal();
