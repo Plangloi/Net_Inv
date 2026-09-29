@@ -2805,20 +2805,41 @@ function importNmap(inp){
 // Shared tail of the scan-file importers: assign ids + auto-VLAN, confirm, append.
 function appendScannedDevices(devs,source){
   if(!devs.length){alert(`No hosts found in ${source} output.`);return;}
-  // Skip IPs already in inventory (and repeats within the file itself)
-  const seen=new Set(devices.map(d=>d.ip).filter(Boolean));
+  // Skip IPs already in inventory (and repeats within the file itself), but
+  // backfill FILL_FIELDS that are still empty on the existing device.
+  const FILL_FIELDS={mac:"MAC",notes:"notes"};
+  const byIp=new Map(devices.filter(d=>d.ip).map(d=>[d.ip,d]));
+  const seen=new Set(byIp.keys());
+  const fills=new Map(); // existing device → {field:value}
   const total=devs.length;
-  devs=devs.filter(d=>!seen.has(d.ip)&&seen.add(d.ip));
+  devs=devs.filter(d=>{
+    const ex=byIp.get(d.ip);
+    if(ex)for(const k in FILL_FIELDS){
+      const f=fills.get(ex)||{};
+      if(!(ex[k]||"").trim()&&d[k]&&!(k in f)){f[k]=d[k];fills.set(ex,f);}
+    }
+    return !seen.has(d.ip)&&seen.add(d.ip);
+  });
   const skipped=total-devs.length;
-  const skipMsg=skipped?` — ${skipped} existing/duplicate IP(s) skipped`:"";
-  if(!devs.length){alert(`All ${total} host(s) from ${source} are already in inventory.`);return;}
+  if(!devs.length&&!fills.size){alert(`All ${total} host(s) from ${source} are already in inventory.`);return;}
   devs.forEach(d=>{
     d.id=nextId++;
     const av=autoVlanFields(d.ip);
     if(!d.vlan) d.vlan=av.vlan;
     if(!d.subnet&&av.subnet) d.subnet=av.subnet;
   });
-  if(confirm(`Import ${devs.length} new host(s) from ${source}?${skipMsg}`)){
+  const parts=[];
+  if(devs.length)parts.push(`import ${devs.length} new host(s)`);
+  if(fills.size){
+    const counts=Object.entries(FILL_FIELDS)
+      .map(([k,label])=>[label,[...fills.values()].filter(f=>k in f).length])
+      .filter(([,n])=>n).map(([label,n])=>`${n} ${label}`).join(", ");
+    parts.push(`fill empty fields on ${fills.size} existing device(s) (${counts})`);
+  }
+  const skipMsg=skipped?` — ${skipped} existing/duplicate IP(s) not re-added`:"";
+  const msg=parts.join(" and ");
+  if(confirm(`From ${source}: ${msg[0].toUpperCase()+msg.slice(1)}?${skipMsg}`)){
+    fills.forEach((f,ex)=>Object.assign(ex,f));
     devices.push(...devs);save();render();stats();
   }
 }
