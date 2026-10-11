@@ -25,6 +25,15 @@ Device columns: `hostname, brand, model, ip, mac, vlan, subnet, location, serial
 
 **Brand/Model manager** — built-in catalog (`#netinv-brands-builtin`) + custom brand/model entries, persisted separately. New entries can also be added inline from the Add Device modal, not just the manager itself.
 
+**Brand catalog file** — `brands.json` is the master catalog that ships with every new install (standalone and Docker). To add the brands/models you've collected on a job: Brand Manager → `⬇ Export catalog`, then in the repo:
+
+```bash
+python3 tools/sync-brands.py ~/Downloads/netinv-brands.json
+git commit -am "Add brands" && git push
+```
+
+The script merges into `brands.json` and the built-in block of both HTML builds — additive only, it never removes or reorders entries (new brands go before `Other`). `⬆ Import catalog` in the Brand Manager does the same additive merge into the current install without touching the repo.
+
 **VLAN manager** — custom VLAN list, tied into device records and CSV/JSON payloads.
 
 **Auto-VLAN** — devices added from the subnet scanner or nmap import get the VLAN whose subnet contains their IP (most specific match wins), falling back to the Default VLAN. Typing an IP — in the Add Device form or in an existing row — moves the device to the matching VLAN, replacing any VLAN it had; an IP that matches no VLAN subnet (e.g. `DHCP`) leaves the VLAN alone. Subnet follows only if it was empty or still the old VLAN's subnet, so a typed mask is kept. The bulk bar's `⬡ Auto-VLAN` assigns VLANs to selected rows that have none, without touching rows that already have one.
@@ -127,6 +136,8 @@ docker-compose.host-net.yml   # optional overlay, Linux only — real ARP for MA
 ```
 index.html   # standalone build — entire app, markup/styles/logic, single file
 server/      # dockerized build — FastAPI + SQLite backend, same UI, shared/live inventory
+brands.json  # master brand/model catalog — merged into both builds by tools/sync-brands.py
+tools/       # sync-brands.py
 ```
 
 No build step for the standalone file — edit in place, commit, done. The server build needs `docker compose up -d --build` after editing anything under `server/`.

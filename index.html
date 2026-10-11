@@ -698,8 +698,9 @@ footer{border-top:none;color:var(--text-muted)}
   "d&b":["C6","C4","C3","C2","E6","E3","E0","Y7P","Y3P","DS100"],
   "L-Acoustics":["X4i","X8","X12","X15","X18","X24","A15","A10","A5"],
   "Luminex":["GigaCore 12","GigaCore 24","GigaCore 48","GigaCore X4K","GigaCore X8K"],
-  "Riedel":["Bolero Active Antenna","Bolero Transceiver","Bolero Beltpack","Artist","Performer","MediorNet MicroN"],
+  "Riedel":["Bolero Active Antenna","Bolero Transceiver","Bolero Beltpack","Artist","Performer","MediorNet MicroN","ARTIST-1024"],
   "Clearcom":["FreeSpeak II Base","FreeSpeak II Transceiver","FreeSpeak II Beltpack","FreeSpeak II Antenna"],
+  "Lenovo":[],
   "Other":["Network Switch","Access Point","Server","Workstation","Projector","Flat Panel Display","Amplifier","DSP","Matrix Switch","Custom Device"]
 }
 </script>
@@ -924,6 +925,17 @@ footer{border-top:none;color:var(--text-muted)}
     <div class="modal-custom-list" id="customBrandList"></div>
     <div style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-top:4px">
       Built-in brands cannot be deleted — only custom ones appear here.
+    </div>
+
+    <!-- Catalog file: carry brands to other installs / bake into the repo -->
+    <h3>Catalog File</h3>
+    <div class="mf">
+      <button class="mbtn" onclick="exportBrandCatalog()" title="Download every brand &amp; model (built-in + custom) as JSON">⬇ Export catalog</button>
+      <button class="mbtn" onclick="document.getElementById('impBrands').click()" title="Add brands &amp; models from a catalog JSON — never removes anything">⬆ Import catalog</button>
+      <input type="file" id="impBrands" accept=".json" class="hidden" onchange="importBrandCatalog(this)">
+    </div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-top:4px">
+      To ship brands with every new install: export, then run <code>python3 tools/sync-brands.py ~/Downloads/netinv-brands.json</code> in the repo and commit.
     </div>
 
     <div class="modal-footer">
@@ -1230,6 +1242,37 @@ function renderCustomBrandList(){
         </span>`).join("")}
       </div>`:`<span style="font-family:var(--mono);font-size:10px;color:var(--text-muted)">No custom models yet — add one above.</span>`}
     </div>`).join("");
+}
+
+// ─── CATALOG FILE ────────────────────────────────────────────────────────────
+// Export = full merged catalog (same {brand:[models]} shape as brands.json).
+// Import is additive: only brands/models not already known are added.
+function exportBrandCatalog(){
+  dl("netinv-brands.json",JSON.stringify(getBrands(),null,2),"application/json");
+}
+function importBrandCatalog(inp){
+  const file=inp.files[0];inp.value="";
+  if(!file)return;
+  file.text().then(txt=>{
+    let src;
+    try{src=JSON.parse(txt)}catch(err){alert("Not valid JSON: "+err.message);return}
+    if(!src||typeof src!=="object"||Array.isArray(src)){alert('Expected a catalog like {"Brand":["Model", …]}.');return}
+    const known=getBrands();
+    let nb=0,nm=0;
+    for(const[rawB,models] of Object.entries(src)){
+      const b=String(rawB).trim();if(!b)continue;
+      if(!known[b]){known[b]=[];BRANDS_CUSTOM[b]=BRANDS_CUSTOM[b]||[];nb++}
+      (Array.isArray(models)?models:[]).forEach(raw=>{
+        const m=String(raw).trim();
+        if(!m||known[b].includes(m))return;
+        known[b].push(m);
+        (BRANDS_CUSTOM[b]=BRANDS_CUSTOM[b]||[]).push(m);nm++;
+      });
+    }
+    saveCustomBrands();save();
+    populateModelToBrand();renderCustomBrandList();render();
+    alert(nb||nm?`Imported ${nb} new brand${nb!==1?"s":""} and ${nm} new model${nm!==1?"s":""}.`:"Nothing new — every brand and model is already in the catalog.");
+  });
 }
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
