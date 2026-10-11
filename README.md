@@ -21,13 +21,13 @@ Device columns: `hostname, brand, model, ip, mac, vlan, subnet, location, serial
 
 **Inventory table** — add/edit devices, column filters, bulk select + bulk actions, print stylesheet for handoff sheets.
 
-**Add Device modal** — `+ Add Device` opens a form (name, brand/model, IP/MAC, VLAN/subnet, location/serial, credentials, status, notes) instead of dropping a blank row into the table; IP auto-fills from the default VLAN's subnet. Brand and Model are type-or-pick fields — typing one that isn't in the catalog yet adds it to the custom brand/model list on submit.
+**Add Device modal** — `+ Add Device` opens a form (name, brand/model, IP/MAC, VLAN/subnet, location/serial, credentials, status, notes) instead of dropping a blank row into the table; IP auto-fills from the default VLAN's subnet, and typing an IP inside another VLAN's subnet switches the VLAN (and subnet) to match. Brand and Model are type-or-pick fields — typing one that isn't in the catalog yet adds it to the custom brand/model list on submit.
 
 **Brand/Model manager** — built-in catalog (`#netinv-brands-builtin`) + custom brand/model entries, persisted separately. New entries can also be added inline from the Add Device modal, not just the manager itself.
 
 **VLAN manager** — custom VLAN list, tied into device records and CSV/JSON payloads.
 
-**Auto-VLAN** — devices added from the subnet scanner or nmap import get the VLAN whose subnet contains their IP (most specific match wins), falling back to the Default VLAN. Typing an IP into a row with no VLAN fills it the same way, and the bulk bar's `⬡ Auto-VLAN` assigns VLANs to selected rows that have none. A VLAN you've already set is never overwritten.
+**Auto-VLAN** — devices added from the subnet scanner or nmap import get the VLAN whose subnet contains their IP (most specific match wins), falling back to the Default VLAN. Typing an IP — in the Add Device form or in an existing row — moves the device to the matching VLAN, replacing any VLAN it had; an IP that matches no VLAN subnet (e.g. `DHCP`) leaves the VLAN alone. Subnet follows only if it was empty or still the old VLAN's subnet, so a typed mask is kept. The bulk bar's `⬡ Auto-VLAN` assigns VLANs to selected rows that have none, without touching rows that already have one.
 
 **Multi-row edit** — with 2+ rows checked, editing one row applies to all of them: IP increments (skipping IPs already used, logged), hostname auto-numbers (`NVX-ENC` → `-01`, `-02`…), brand/model/VLAN/status/subnet/location/notes/credentials copy as-is. MAC and serial stay per-row.
 
