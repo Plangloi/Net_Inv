@@ -814,7 +814,7 @@ footer{border-top:none;color:var(--text-muted)}
       </div>
       <div class="mf">
         <label>IP</label>
-        <input id="addDevIp" placeholder="0.0.0.0 / DHCP">
+        <input id="addDevIp" placeholder="0.0.0.0 / DHCP" oninput="onAddDevIpInput()">
         <label style="min-width:38px">MAC</label>
         <input id="addDevMac" placeholder="AA:BB:CC:DD:EE:FF">
       </div>
@@ -1581,7 +1581,17 @@ function autoVlanFields(ip){
   const defDef=defVlan?getVlan(defVlan):null;
   return{vlan:defVlan,subnet:(defDef&&defDef.subnet)||document.getElementById("siteSubnet").value||""};
 }
-// Manual IP edit: fill VLAN (and empty subnet) only when the row has no VLAN yet
+// IP → VLAN: switch the device to the VLAN whose subnet contains its IP.
+// No match (DHCP, foreign range) leaves the VLAN alone. Subnet follows only
+// when it was empty or still the old VLAN's subnet, so typed masks survive.
+function syncVlanToIP(d){
+  const vd=vlanForIP(d.ip);
+  if(!vd||vd.v===d.vlan)return;
+  const old=d.vlan?getVlan(d.vlan):null;
+  if(vd.subnet&&(!d.subnet||(old&&d.subnet===old.subnet)))d.subnet=vd.subnet;
+  d.vlan=vd.v;
+}
+// Manual IP edit: re-pick VLAN (and subnet) from the new IP
 // With a multi-row selection, peers get the next free IPs (.51, .52…);
 // non-IP text like "DHCP" is copied as-is.
 function onIpChange(id,val){
@@ -1609,8 +1619,7 @@ function onIpChange(id,val){
   [id,...peers].forEach((x,i)=>{
     const d=devices.find(d=>d.id===x);if(!d)return;
     d.ip=ips[i];
-    const vd=vlanForIP(d.ip);
-    if(!d.vlan&&vd){d.vlan=vd.v;if(!d.subnet&&vd.subnet)d.subnet=vd.subnet}
+    syncVlanToIP(d);
   });
   save();render();stats();
 }
@@ -1887,6 +1896,13 @@ function persistNewBrandModel(brand,model){
 function populateAddDeviceVlanSelect(){
   document.getElementById("addDevVlan").innerHTML=
     '<option value="">— None —</option>'+getVlans().map(x=>`<option value="${x.v}">${x.v} — ${x.l}</option>`).join("");
+}
+// Add Device: typing an IP inside a VLAN subnet selects that VLAN
+function onAddDevIpInput(){
+  const sel=document.getElementById("addDevVlan"),sub=document.getElementById("addDevSubnet");
+  const d={ip:document.getElementById("addDevIp").value.trim(),vlan:sel.value,subnet:sub.value.trim()};
+  syncVlanToIP(d);
+  sel.value=d.vlan;sub.value=d.subnet;
 }
 function submitAddDevice(ev){
   if(ev)ev.preventDefault();
