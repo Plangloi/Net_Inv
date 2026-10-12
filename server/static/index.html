@@ -2379,7 +2379,7 @@ function populateFilterDropdowns(){
   const vlans=[...new Set(devices.map(d=>d.vlan).filter(Boolean))].sort((a,b)=>+a-(+b));
   const fv=document.getElementById("filterVlan");
   const prevV=fv.value;
-  fv.innerHTML='<option value="">All VLANs</option>'+vlans.map(v=>`<option${v===prevV?" selected":""}>${e(v)}</option>`).join("");
+  fv.innerHTML='<option value="">All VLANs</option>'+vlans.map(v=>{const def=getVlan(v);return `<option value="${e(v)}"${v===prevV?" selected":""}>${e(v)}${def&&def.l?" — "+e(def.l):""}</option>`}).join("");
 }
 
 // ─── COLUMN FILTERS ───────────────────────────────────────────────────────────
