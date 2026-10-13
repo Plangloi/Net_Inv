@@ -629,6 +629,8 @@ header:focus-within,.sub-bar:focus-within,.tw:focus-within,.filter-bar:focus-wit
 .sico{color:var(--crimson)}
 .filter-bar{border-color:var(--border);margin-bottom:10px}
 .filter-active{border-color:var(--ember)!important;color:var(--ember)!important}
+.filter-clear.on{background:var(--ember);border-color:var(--ember);color:var(--bg)}
+.filter-clear.on:hover{background:var(--red);border-color:var(--red);color:var(--bg)}
 .bulk-bar{background:rgba(92,98,75,.12);border-color:var(--olive)}
 .bulk-bar-label{color:var(--text)}
 .tw{border-color:var(--border2);background:var(--panel)}
@@ -1045,7 +1047,7 @@ footer{border-top:none;color:var(--text-muted)}
     <option value="">All VLANs</option>
   </select>
   <button class="sbtn" id="groupVlanBtn" onclick="toggleGroupVlan()" title="Group rows by VLAN">⊞ Group by VLAN</button>
-  <button class="filter-clear" onclick="clearFilters()">✕ Clear</button>
+  <button class="filter-clear" id="filterClear" onclick="clearFilters()">✕ Clear</button>
   <span class="filter-count" id="filterCount"></span>
 </div>
 
@@ -1420,6 +1422,9 @@ function render(){
   const fc=document.getElementById("filterCount");
   if(fc) fc.textContent=(filterBrand||filterStatus||filterVlan||q)
     ? `${list.length} of ${devices.length} shown` : "";
+  // Light up Clear while any column filter is on
+  const fcl=document.getElementById("filterClear");
+  if(fcl) fcl.classList.toggle("on", !!(filterBrand||filterStatus||filterVlan));
 
   // Populate filter dropdowns
   populateFilterDropdowns();
