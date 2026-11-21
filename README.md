@@ -15,11 +15,13 @@ Or just double-click it. Works from `file://` or any static host.
 
 ## Data model
 
-Device columns: `hostname, brand, model, ip, mac, vlan, subnet, location, serial, username, password, status, notes`
+Device columns: `hostname, brand, model, ip, mac, vlan, subnet, location, serial, username, password, status, notes`, plus `connections` — a list of `{proto, port, note}`
 
 ## Features
 
 **Inventory table** — add/edit devices, column filters (brand / status / VLAN — the VLAN filter lists each VLAN as `number — name`, e.g. `10 — AV Control`; `✕ Clear` lights up while any of them is on), bulk select + bulk actions, print stylesheet for handoff sheets. Drag a column header's right edge to resize that column; widths are remembered per browser, and double-clicking an edge resets all columns. `⊞ Fit Screen` ignores custom widths while it's on.
+
+**Device connections** — each device can list the control connections it uses (protocol + port + label, e.g. `OSC/UDP 8000 — cue in`, `TCP 1710 — Q-SYS QRC`). They're hidden by default: the `⇄` button in the row's Actions (showing a count when there are any) opens a sub-row under the device to add, edit, copy (`ip:port`) or remove them. Protocol is free text with suggestions (TCP, UDP, OSC/UDP, OSC/TCP, HTTP, Telnet, SSH…); typing a known AV port with an empty label fills it in (`1710` → `Q-SYS QRC`). Connections are searchable, copied by Duplicate, kept in JSON export/import, and written to CSV as one `connections` column (`TCP 1710 — label; UDP 8000 — label`).
 
 **Add Device modal** — `+ Add Device` opens a form (name, brand/model, IP/MAC, VLAN/subnet, location/serial, credentials, status, notes) instead of dropping a blank row into the table; IP auto-fills from the default VLAN's subnet, and typing an IP inside another VLAN's subnet switches the VLAN (and subnet) to match. Brand and Model are type-or-pick fields — typing one that isn't in the catalog yet adds it to the custom brand/model list on submit.
 

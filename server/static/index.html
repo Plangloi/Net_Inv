@@ -422,6 +422,22 @@ tr.vrow-stripe{border-left:3px solid var(--stripe-color,transparent)}
   cursor:pointer;border-radius:2px;padding:3px 7px;font-size:13px;transition:all .1s}
 .rb.dup:hover{border-color:var(--cyan);color:var(--cyan)}
 .rb.del:hover{border-color:var(--red);color:var(--red)}
+/* Device connections (protocol / port) — toggle + expandable sub-row */
+.rb.conn{font-family:var(--mono);font-size:12px;padding:3px 6px;white-space:nowrap}
+.rb.conn.has{color:var(--amber)}
+.rb.conn:hover{border-color:var(--cyan);color:var(--cyan)}
+.rb.conn.open{border-color:var(--amber);color:var(--amber)}
+.rb.conn .cnum{font-size:9px;margin-left:3px;vertical-align:1px}
+tr.conn-row{background:var(--surface)!important;border-bottom:1px solid var(--border2)}
+tr.conn-row:hover{background:var(--surface)!important}
+tr.conn-row>td{padding:6px 10px 10px 72px}
+.conn-box{display:flex;flex-direction:column;gap:4px;max-width:720px}
+.conn-head,.conn-line{display:grid;grid-template-columns:120px 90px minmax(0,1fr) auto auto;gap:6px;align-items:center}
+.conn-head{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);padding:0 2px}
+.conn-line .ci{border-color:var(--border)}
+.conn-empty{font-family:var(--mono);font-size:11px;color:var(--text-muted);padding:2px}
+.rb.conn-add{align-self:flex-start;font-family:var(--mono);font-size:11px;margin-top:2px}
+.rb.conn-add:hover{border-color:var(--cyan);color:var(--cyan)}
 
 /* VLAN group separator row */
 .vlan-sep{background:var(--surface2)!important;border-top:2px solid var(--border2);border-bottom:1px solid var(--border2);}
@@ -1422,7 +1438,7 @@ function render(){
   const freq={};devices.forEach(d=>{if(d.ip)freq[d.ip]=(freq[d.ip]||0)+1});
   const dups=new Set(Object.keys(freq).filter(k=>freq[k]>1));
 
-  let list=q?devices.filter(d=>Object.values(d).some(v=>String(v).toLowerCase().includes(q))):[...devices];
+  let list=q?devices.filter(d=>Object.entries(d).some(([k,v])=>String(k==="connections"?connStr(v):v).toLowerCase().includes(q))):[...devices];
 
   // Apply column filters
   if(filterBrand)  list=list.filter(d=>d.brand===filterBrand);
@@ -1502,6 +1518,7 @@ function render(){
         vlanDhcpTag=`<span class="vlan-dhcp-tag" style="--vtag-color:${vlanColor}" title="In VLAN ${d.vlan} DHCP range (${vlanDef.dhcpStart}–${vlanDef.dhcpEnd})">DHCP</span>`;
     }
 
+    const nConn=(d.connections||[]).length;
     tr.innerHTML=`
 <td class="td-check"><input type="checkbox" class="row-check" data-id="${d.id}"${keepSel.has(d.id)?" checked":""} onchange="onRowCheck()"></td>
 <td class="cn">${rowNum}</td>
@@ -1556,9 +1573,10 @@ function render(){
   <div class="pr" id="pr${d.id}"></div>
 </td>
 <td><input class="ci" value="${e(d.notes)}" placeholder="Notes…" style="min-width:130px" data-f="notes" oninput="updSel(${d.id},'notes',this.value)"></td>
-<td><div class="ra"><button class="rb dup" onclick="dupRow(${d.id})" title="Duplicate">⧉</button><button class="rb del" onclick="delRow(${d.id})" title="Delete">✕</button></div></td>`;
+<td><div class="ra"><button class="rb conn${nConn?" has":""}${connOpen.has(d.id)?" open":""}" onclick="toggleConn(${d.id})" title="Connections (protocol / port)${nConn?` — ${nConn}`:""}">⇄${nConn?`<span class="cnum">${nConn}</span>`:""}</button><button class="rb dup" onclick="dupRow(${d.id})" title="Duplicate">⧉</button><button class="rb del" onclick="delRow(${d.id})" title="Delete">✕</button></div></td>`;
     body.appendChild(tr);
     tr.querySelectorAll("select.cs").forEach(resizeSelect);
+    if(connOpen.has(d.id))body.appendChild(connRow(d));
   });
   onRowCheck();
   const banner=document.getElementById("dupBanner");
@@ -1566,6 +1584,82 @@ function render(){
     banner.classList.add("show");
     document.getElementById("dupTxt").textContent=`⚠  IP Conflict: ${[...dups].join(", ")} — ${dups.size} address${dups.size>1?"es":""} assigned to multiple devices!`;
   }else banner.classList.remove("show");
+}
+
+// ─── DEVICE CONNECTIONS ───────────────────────────────────────────────────────
+// Each device can carry a list of control connections: {proto, port, note}
+// (e.g. OSC/UDP 8000 "cue in", TCP 1710 "Q-SYS QRC"). Hidden by default —
+// the ⇄ button in Actions opens a sub-row under the device to edit them.
+// Typing a known AV port with an empty label fills the label from AV_PORTS.
+const CONN_PROTOS=["TCP","UDP","OSC/UDP","OSC/TCP","HTTP","HTTPS","WebSocket","Telnet","SSH","SNMP","Art-Net","sACN","MIDI","RS-232"];
+let connOpen=new Set(); // device ids whose connection row is expanded (view state only)
+// "TCP 1710 — Q-SYS QRC; OSC/UDP 8000 — cue in"  (used for CSV + search)
+function connStr(list){
+  return (Array.isArray(list)?list:[]).map(c=>
+    [c.proto,c.port].filter(Boolean).join(" ")+(c.note?" — "+String(c.note).replace(/;/g,","):"")
+  ).join("; ");
+}
+function parseConns(s){
+  return String(s||"").split(";").map(x=>x.trim()).filter(Boolean).map(x=>{
+    const [a,...n]=x.split(" — ");
+    const m=a.trim().match(/^(.*?)(?:\s+(\d{1,5}))?$/);
+    return {proto:(m[1]||"").trim(),port:m[2]||"",note:n.join(" — ").trim()};
+  });
+}
+function ensureConnLists(){
+  if(document.getElementById("connProtoList"))return;
+  const pl=document.createElement("datalist");pl.id="connProtoList";
+  pl.innerHTML=CONN_PROTOS.map(p=>`<option value="${e(p)}">`).join("");
+  const seen=new Set(),ports=document.createElement("datalist");ports.id="connPortList";
+  ports.innerHTML=AV_PORTS.filter(p=>!seen.has(p.port)&&seen.add(p.port))
+    .map(p=>`<option value="${p.port}" label="${e(p.svc)} (${p.proto})">`).join("");
+  document.body.append(pl,ports);
+}
+function connRow(d){
+  ensureConnLists();
+  const list=d.connections||[];
+  const tr=document.createElement("tr");
+  tr.className="conn-row";tr.dataset.conn=d.id;
+  tr.innerHTML=`<td colspan="17"><div class="conn-box">
+  ${list.length
+    ?`<div class="conn-head"><span>Protocol</span><span>Port</span><span>Label / note</span><span></span><span></span></div>`
+    :`<div class="conn-empty">No connections yet — add the control ports this device uses (OSC, TCP, UDP…).</div>`}
+  ${list.map((c,i)=>`<div class="conn-line">
+    <input class="ci" list="connProtoList" value="${e(c.proto)}" placeholder="TCP" onchange="updConn(${d.id},${i},'proto',this.value)">
+    <input class="ci conn-port" list="connPortList" inputmode="numeric" value="${e(c.port)}" placeholder="port" onchange="updConn(${d.id},${i},'port',this.value)">
+    <input class="ci" id="cnn${d.id}_${i}" value="${e(c.note)}" placeholder="e.g. QRC control, OSC in" onchange="updConn(${d.id},${i},'note',this.value)">
+    <button class="copy-btn" onclick="copyConn(${d.id},${i},this)" title="Copy ip:port">⧉</button>
+    <button class="rb del" onclick="delConn(${d.id},${i})" title="Remove connection">✕</button>
+  </div>`).join("")}
+  <button class="rb conn-add" onclick="addConn(${d.id})">+ Add connection</button>
+</div></td>`;
+  return tr;
+}
+function toggleConn(id){connOpen.has(id)?connOpen.delete(id):connOpen.add(id);render()}
+function addConn(id){
+  const d=devices.find(d=>d.id===id);if(!d)return;
+  (d.connections=d.connections||[]).push({proto:"TCP",port:"",note:""});
+  connOpen.add(id);save();render();
+  const ports=document.querySelectorAll(`tr.conn-row[data-conn="${id}"] .conn-port`);
+  if(ports.length)ports[ports.length-1].focus();
+}
+function delConn(id,i){
+  const d=devices.find(d=>d.id===id);if(!d||!d.connections)return;
+  d.connections.splice(i,1);save();render();
+}
+function updConn(id,i,f,v){
+  const d=devices.find(d=>d.id===id);const c=d&&d.connections&&d.connections[i];if(!c)return;
+  c[f]=String(v).trim();
+  if(f!=="note"&&!c.note&&c.port){
+    const tp=/udp/i.test(c.proto)?"udp":"tcp";
+    const hit=AV_PORTS.find(p=>String(p.port)===c.port&&p.proto===tp)||AV_PORTS.find(p=>String(p.port)===c.port);
+    if(hit){c.note=hit.svc;const el=document.getElementById(`cnn${id}_${i}`);if(el)el.value=hit.svc}
+  }
+  save();
+}
+function copyConn(id,i,btn){
+  const d=devices.find(d=>d.id===id);const c=d&&d.connections&&d.connections[i];if(!c)return;
+  copyText(d.ip&&c.port?`${d.ip}:${c.port}`:(c.port||d.ip||""),btn);
 }
 
 // ─── UTILITY HELPERS ──────────────────────────────────────────────────────────
@@ -1989,7 +2083,7 @@ function submitAddDevice(ev){
   closeAddDeviceModal();
 }
 function delRow(id){if(!confirm("Delete this device?"))return;devices=devices.filter(d=>d.id!==id);save();render();stats()}
-function dupRow(id){const d=devices.find(d=>d.id===id);if(!d)return;const c={...d,id:nextId++,ip:"",hostname:d.hostname+" (copy)"};devices.splice(devices.indexOf(d)+1,0,c);save();render();stats()}
+function dupRow(id){const d=devices.find(d=>d.id===id);if(!d)return;const c={...d,connections:(d.connections||[]).map(x=>({...x})),id:nextId++,ip:"",hostname:d.hostname+" (copy)"};devices.splice(devices.indexOf(d)+1,0,c);save();render();stats()}
 function clearAll(){if(!confirm("Clear ALL devices? Cannot be undone."))return;devices=[];nextId=1;save();render();stats()}
 
 document.querySelectorAll("thead th[data-f]").forEach(th=>{
@@ -2862,8 +2956,9 @@ function closeIoDropOutside(e){
 // ─── EXPORT / IMPORT ──────────────────────────────────────────────────────────
 const COLS=["hostname","brand","model","ip","mac","vlan","subnet","location","serial","username","password","status","notes"];
 function exportCSV(){
-  const rows=devices.map(d=>COLS.map(c=>`"${String(d[c]||"").replace(/"/g,'""')}"`).join(","));
-  dl("network-inventory.csv",[COLS.join(","),...rows].join("\r\n"),"text/csv");
+  const q=v=>`"${String(v||"").replace(/"/g,'""')}"`;
+  const rows=devices.map(d=>[...COLS.map(c=>q(d[c])),q(connStr(d.connections))].join(","));
+  dl("network-inventory.csv",[[...COLS,"connections"].join(","),...rows].join("\r\n"),"text/csv");
 }
 function exportJSON(){
   const meta={site:document.getElementById("siteName").value,subnet:document.getElementById("siteSubnet").value,
@@ -2886,7 +2981,7 @@ function impCSV(txt){
     for(const ch of line+","){
       if(ch==='"'){inq=!inq}else if(ch===","&&!inq){vals.push(cur.replace(/^"|"$/g,""));cur=""}else cur+=ch;
     }
-    const d={id:nextId++,status:"Unknown"};cols.forEach((c,i)=>{d[c]=vals[i]||""});return d;
+    const d={id:nextId++,status:"Unknown"};cols.forEach((c,i)=>{d[c]=vals[i]||""});if("connections" in d)d.connections=parseConns(d.connections);return d;
   });
   if(confirm(`Import ${devs.length} device(s)? (appended)`)){devices.push(...devs);save();render();stats()}
 }
