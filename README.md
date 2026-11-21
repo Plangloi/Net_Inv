@@ -19,7 +19,7 @@ Device columns: `hostname, brand, model, ip, mac, vlan, subnet, location, serial
 
 ## Features
 
-**Inventory table** — add/edit devices, column filters (brand / status / VLAN — the VLAN filter lists each VLAN as `number — name`, e.g. `10 — AV Control`; `✕ Clear` lights up while any of them is on), bulk select + bulk actions, print stylesheet for handoff sheets.
+**Inventory table** — add/edit devices, column filters (brand / status / VLAN — the VLAN filter lists each VLAN as `number — name`, e.g. `10 — AV Control`; `✕ Clear` lights up while any of them is on), bulk select + bulk actions, print stylesheet for handoff sheets. Drag a column header's right edge to resize that column; widths are remembered per browser, and double-clicking an edge resets all columns. `⊞ Fit Screen` ignores custom widths while it's on.
 
 **Add Device modal** — `+ Add Device` opens a form (name, brand/model, IP/MAC, VLAN/subnet, location/serial, credentials, status, notes) instead of dropping a blank row into the table; IP auto-fills from the default VLAN's subnet, and typing an IP inside another VLAN's subnet switches the VLAN (and subnet) to match. Brand and Model are type-or-pick fields — typing one that isn't in the catalog yet adds it to the custom brand/model list on submit.
 

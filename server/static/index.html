@@ -355,6 +355,16 @@ table{width:100%;border-collapse:collapse;min-width:1500px}
 .tw.fit .eye{padding:1px 3px;font-size:10px}
 .btn-fit{border-color:var(--cyan);color:var(--cyan);background:transparent}
 .btn-fit.active{background:var(--cyan);color:var(--bg)}
+/* ── RESIZABLE COLUMNS ── */
+thead th{position:relative}
+.col-rz{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:2;user-select:none}
+.col-rz::after{content:'';position:absolute;top:25%;bottom:25%;left:3px;width:1px;background:var(--border2);opacity:.6}
+.col-rz:hover::after,.col-rz.drag::after{background:var(--cyan);opacity:1;top:0;bottom:0}
+body.col-resizing,body.col-resizing *{cursor:col-resize!important;user-select:none!important}
+.tw.colsized table{table-layout:fixed;min-width:0}
+.tw.colsized thead th{overflow:hidden;text-overflow:ellipsis}
+.tw.colsized td{overflow:hidden}
+.tw.colsized .ci,.tw.colsized .cs,.tw.colsized td input[style],.tw.colsized td select[style]{width:100%!important;min-width:0!important;max-width:100%}
 thead tr{background:var(--panel);border-bottom:2px solid var(--amber-dim)}
 thead th{font-family:var(--mono);font-size:10px;font-weight:600;text-transform:uppercase;
   letter-spacing:.13em;color:var(--amber);padding:10px 6px;text-align:left;
@@ -2029,7 +2039,51 @@ function toggleFitMode(){
     btn.textContent="⊞ Fit Screen";
     btn.title="Toggle fit-to-screen mode — see all columns without scrolling";
   }
+  applyColWidths();
 }
+
+// ── RESIZABLE COLUMNS ────────────────────────────────────────────────────────
+// Drag the right edge of any header to resize that column. Widths are kept per
+// browser in localStorage (niv_colw). Double-click a handle to reset all widths.
+// Fit Screen mode ignores custom widths and restores them when switched off.
+let colWidths=null;
+try{const r=localStorage.getItem("niv_colw");if(r)colWidths=JSON.parse(r);}catch(e){colWidths=null;}
+function saveColWidths(){try{if(colWidths)localStorage.setItem("niv_colw",JSON.stringify(colWidths));else localStorage.removeItem("niv_colw");}catch(e){}}
+function applyColWidths(){
+  const tw=document.querySelector(".tw"),table=tw&&tw.querySelector("table");if(!table)return;
+  const ths=[...table.querySelectorAll("thead th")];
+  if(fitMode||!colWidths||colWidths.length!==ths.length){
+    tw.classList.remove("colsized");table.style.width="";ths.forEach(th=>th.style.width="");
+    return;
+  }
+  ths.forEach((th,i)=>th.style.width=colWidths[i]+"px");
+  table.style.width=colWidths.reduce((a,b)=>a+b,0)+"px";
+  tw.classList.add("colsized");
+}
+function resetColWidths(){colWidths=null;saveColWidths();applyColWidths()}
+(function initColResize(){
+  const ths=[...document.querySelectorAll(".tw thead th")];
+  ths.forEach((th,i)=>{
+    const h=document.createElement("span");
+    h.className="col-rz";h.title="Drag to resize · double-click to reset all columns";
+    h.addEventListener("click",ev=>ev.stopPropagation());
+    h.addEventListener("dblclick",ev=>{ev.stopPropagation();resetColWidths()});
+    h.addEventListener("mousedown",ev=>{
+      if(ev.button!==0||fitMode)return;
+      ev.preventDefault();ev.stopPropagation();
+      // Freeze every column at its current rendered width before the first resize
+      if(!colWidths||colWidths.length!==ths.length){colWidths=ths.map(t=>Math.round(t.getBoundingClientRect().width));applyColWidths();}
+      const startX=ev.clientX,startW=colWidths[i];
+      h.classList.add("drag");document.body.classList.add("col-resizing");
+      const move=e=>{colWidths[i]=Math.max(30,Math.round(startW+e.clientX-startX));applyColWidths()};
+      const up=()=>{document.removeEventListener("mousemove",move);document.removeEventListener("mouseup",up);
+        h.classList.remove("drag");document.body.classList.remove("col-resizing");saveColWidths()};
+      document.addEventListener("mousemove",move);document.addEventListener("mouseup",up);
+    });
+    th.appendChild(h);
+  });
+  applyColWidths();
+})();
 
 function toggleScanPanel(){
   const p=document.getElementById("scanPanel");
