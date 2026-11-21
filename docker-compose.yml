@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "${NETINV_PORT:-8080}:8080"
+#       - "${NETINV_BIND:-127.0.0.1}:${NETINV_PORT:-8080}:8080" #Local only
     volumes:
       - ./data:/data
     environment:
